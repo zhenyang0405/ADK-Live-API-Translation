@@ -7,6 +7,8 @@ import { ScreenSharePanel } from "@/components/ScreenSharePanel";
 import { AnnotationPanel } from "@/components/AnnotationPanel";
 import { AudioManager } from "@/components/AudioManager";
 import { TranscriptDisplay } from "@/components/TranscriptDisplay";
+import { DocumentUploadPanel, type UploadedDoc } from "@/components/DocumentUploadPanel";
+import { DocumentViewerPanel } from "@/components/DocumentViewerPanel";
 
 export default function Home() {
   const { uid, loading, getIdToken } = useAuth();
@@ -46,30 +48,87 @@ export default function Home() {
            </div>
         </header>
 
-        {/* Main Content Area - Split Panel */}
-        <div className="flex-1 flex flex-col md:flex-row p-4 gap-4 overflow-hidden relative">
-           
-           {/* Left side: Screen Capture (60%) */}
-           <div className="w-full md:w-[60%] flex flex-col h-full overflow-hidden">
-              <div className="flex-1 overflow-hidden">
-                <ScreenSharePanel />
-              </div>
-              <div className="mt-4 shrink-0">
-                <AudioManager />
-              </div>
-           </div>
-
-           {/* Right side: Annotations (40%) */}
-           <div className="w-full md:w-[40%] h-full overflow-hidden">
-              <AnnotationPanel />
-           </div>
-
-           {/* Overlay transcript display pinned to bottom */}
-           <TranscriptDisplay />
-
-        </div>
+        {/* Main Content Area */}
+        <MainContent />
       </main>
     </WebSocketProvider>
+  );
+}
+
+// Extracted so we can use hooks inside WebSocketProvider context
+function MainContent() {
+  const [leftPanelMode, setLeftPanelMode] = React.useState<"screenshare" | "document">("screenshare");
+  const [docs, setDocs] = React.useState<UploadedDoc[]>([]);
+  const [activeDoc, setActiveDoc] = React.useState<UploadedDoc | null>(null);
+
+  const handleDocAdded = (doc: UploadedDoc) => {
+    // Upsert: replace existing entry with same id (e.g., when pages are lazily loaded)
+    setDocs((prev) => {
+      const idx = prev.findIndex((d) => d.id === doc.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = doc;
+        return next;
+      }
+      return [...prev, doc];
+    });
+  };
+
+  const handleDocsLoaded = (loaded: UploadedDoc[]) => {
+    setDocs(loaded);
+  };
+
+  const handleDocClick = (doc: UploadedDoc) => {
+    setActiveDoc(doc);
+    setLeftPanelMode("document");
+  };
+
+  const handleCloseDoc = () => {
+    setLeftPanelMode("screenshare");
+  };
+
+  return (
+    <div className="flex-1 flex flex-col md:flex-row p-4 gap-4 overflow-hidden relative">
+       
+       {/* Left side: Screen Capture or Document Viewer (60%) */}
+       <div className="w-full md:w-[60%] flex flex-col h-full overflow-hidden gap-3">
+
+          {/* Document upload bar - always visible */}
+          <div className="shrink-0 bg-white rounded-lg border border-gray-200 shadow-sm px-3 py-2">
+            <DocumentUploadPanel
+              docs={docs}
+              activeDocId={activeDoc?.id ?? null}
+              onDocAdded={handleDocAdded}
+              onDocClick={handleDocClick}
+              onDocsLoaded={handleDocsLoaded}
+            />
+          </div>
+
+          {/* Main left panel - screen share OR document viewer */}
+          <div className="flex-1 overflow-hidden">
+            {leftPanelMode === "screenshare" ? (
+              <ScreenSharePanel />
+            ) : (
+              activeDoc && (
+                <DocumentViewerPanel doc={activeDoc} onClose={handleCloseDoc} />
+              )
+            )}
+          </div>
+
+          <div className="shrink-0">
+            <AudioManager />
+          </div>
+       </div>
+
+       {/* Right side: Annotations (40%) */}
+       <div className="w-full md:w-[40%] h-full overflow-hidden">
+          <AnnotationPanel />
+       </div>
+
+       {/* Overlay transcript display pinned to bottom */}
+       <TranscriptDisplay />
+
+    </div>
   );
 }
 

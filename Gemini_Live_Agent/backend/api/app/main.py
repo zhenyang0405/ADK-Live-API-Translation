@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from shared.auth import verify_token
 from api.app.routes.health import router as health_router
+from api.app.routes.documents import router as documents_router
 
 app = FastAPI(title="Dr. Lingua API")
 
@@ -18,8 +19,8 @@ app.add_middleware(
 # Authentication Middleware
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    # Exclude /health from authentication
-    if request.url.path == "/health":
+    # Exclude /health and CORS preflight requests from authentication
+    if request.url.path == "/health" or request.method == "OPTIONS":
         return await call_next(request)
         
     auth_header = request.headers.get("Authorization")
@@ -38,3 +39,4 @@ async def auth_middleware(request: Request, call_next):
 
 # Include routes
 app.include_router(health_router)
+app.include_router(documents_router)
