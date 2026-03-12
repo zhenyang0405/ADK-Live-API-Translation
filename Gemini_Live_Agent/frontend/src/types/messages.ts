@@ -52,4 +52,7 @@ export interface TranslationDoc {
   translated_text: string;
   nuance_notes: string;
   timestamp: any; // Firestore Timestamp
+  image_url?: string;
+  image_description?: string;
+  target_language?: string;
 }

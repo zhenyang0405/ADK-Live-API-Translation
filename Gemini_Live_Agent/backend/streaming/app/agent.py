@@ -1,25 +1,6 @@
-import logging
-import inspect
 from google.adk.agents import Agent
-from google.adk.tools import FunctionTool
 from streaming.app.tools.translation import save_translation
-
-logger = logging.getLogger("uvicorn.error")
-
-# Debug: log the tool function signature to verify ToolContext is handled correctly
-sig = inspect.signature(save_translation)
-logger.info(f"[agent] save_translation signature: {sig}")
-logger.info(f"[agent] save_translation params: {list(sig.parameters.keys())}")
-
-# Debug: inspect what ADK generates as the function declaration
-try:
-    _tool = FunctionTool(save_translation)
-    _decl = _tool._get_declaration()
-    logger.info(f"[agent] Tool declaration name: {_decl.name}")
-    logger.info(f"[agent] Tool declaration description: {_decl.description}")
-    logger.info(f"[agent] Tool declaration parameters: {_decl.parameters}")
-except Exception as e:
-    logger.error(f"[agent] Failed to get tool declaration: {e}", exc_info=True)
+from streaming.app.tools.image_translation import translate_image
 
 SYSTEM_INSTRUCTION = """
 IDENTITY:
@@ -73,12 +54,16 @@ TOOL USAGE:
 - Every time you translate, call save_translation with the translated text. This applies to
   every translation throughout the session, not just the first one.
 - If you do not call save_translation, the translation will not appear on screen for the user.
+- When the user asks you to translate a table, chart, graph, diagram, or any image with text,
+  call translate_image instead. Describe what you see in the image, specify the target language,
+  and provide any nuance notes. The translated image will appear in the annotation panel.
+- Use translate_image for visual content where spatial layout matters (tables, charts, diagrams).
+  Use save_translation for regular paragraph text.
 """
 
 agent = Agent(
     name="dr_lingua",
     model="gemini-2.5-flash-native-audio-preview-12-2025",
     instruction=SYSTEM_INSTRUCTION,
-    tools=[save_translation],
+    tools=[save_translation, translate_image],
 )
-logger.info(f"[agent] Agent created: name={agent.name}, model={agent.model}, tools={agent.tools}")

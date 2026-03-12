@@ -19,10 +19,25 @@ export const AnnotationCard: React.FC<Props> = ({ doc }) => {
     <div className="bg-white rounded shadow-sm border border-gray-200 mb-4 p-4 overflow-hidden">
       <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-3">
         <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-          <span>📄</span> {doc.section_id || 'Translation'}
+          <span>{doc.image_url ? '🖼️' : '📄'}</span> {doc.section_id || 'Translation'}
         </h3>
         <span className="text-xs text-gray-400">{timeStr}</span>
       </div>
+
+      {doc.image_url && (
+        <div className="mb-3">
+          <img
+            src={doc.image_url}
+            alt={doc.image_description || 'Translated image'}
+            className="w-full rounded border border-gray-200 cursor-pointer"
+            onClick={() => window.open(doc.image_url, '_blank')}
+            loading="lazy"
+          />
+          {doc.image_description && (
+            <p className="text-xs text-gray-500 mt-1 italic">{doc.image_description}</p>
+          )}
+        </div>
+      )}
 
       {doc.source_text && (
         <div className="mb-3 text-sm text-gray-500 italic overflow-x-auto">

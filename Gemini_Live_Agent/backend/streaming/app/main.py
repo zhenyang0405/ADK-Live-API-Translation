@@ -50,6 +50,7 @@ async def safe_send(websocket: WebSocket, data: dict, shutdown_event: asyncio.Ev
 async def upstream_task(websocket: WebSocket, live_request_queue: LiveRequestQueue, shutdown_event: asyncio.Event, session_id: str):
     """Receive messages from browser and enqueue to LiveRequestQueue."""
     from streaming.app.active_documents import active_documents
+    from streaming.app.latest_frames import latest_frames
 
     try:
         while True:
@@ -76,6 +77,14 @@ async def upstream_task(websocket: WebSocket, live_request_queue: LiveRequestQue
                         types.Blob(data=frame_bytes, mime_type="image/jpeg")
                     )
 
+                elif msg_type == "document_frame":
+                    # Decode base64 JPEG document page and send as realtime input
+                    frame_bytes = base64.b64decode(data["data"])
+                    latest_frames[session_id] = frame_bytes
+                    live_request_queue.send_realtime(
+                        types.Blob(data=frame_bytes, mime_type="image/jpeg")
+                    )
+
                 elif msg_type == "text":
                     # Send text as content (not realtime)
                     live_request_queue.send_content(
@@ -97,6 +106,7 @@ async def upstream_task(websocket: WebSocket, live_request_queue: LiveRequestQue
         shutdown_event.set()
         live_request_queue.close()
         active_documents.pop(session_id, None)
+        latest_frames.pop(session_id, None)
 
 async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id: str, live_request_queue: LiveRequestQueue, run_config, shutdown_event: asyncio.Event):
     """Process events from run_live() and send to browser.
