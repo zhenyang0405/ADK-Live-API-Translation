@@ -1,13 +1,29 @@
-import React, { useRef, useState, useEffect } from 'react';
+"use client";
+import React, { createContext, useContext, useRef, useState, useEffect, ReactNode } from 'react';
 import { useWebSocketContext } from './WebSocketManager';
 
-export const ScreenSharePanel: React.FC = () => {
+interface ScreenShareContextProps {
+  isSharing: boolean;
+  startSharing: () => Promise<void>;
+  stopSharing: () => void;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+}
+
+const ScreenShareContext = createContext<ScreenShareContextProps | undefined>(undefined);
+
+export const ScreenShareProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { sendMessage, isConnected } = useWebSocketContext();
   const [isSharing, setIsSharing] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Use a second ref to stay in sync with state for the interval closure
+  const isSharingRef = useRef(false);
+  useEffect(() => {
+    isSharingRef.current = isSharing;
+  }, [isSharing]);
 
   const startSharing = async () => {
     try {
@@ -32,9 +48,11 @@ export const ScreenSharePanel: React.FC = () => {
   const stopSharing = () => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
     if (videoRef.current) {
       videoRef.current.srcObject = null;
@@ -43,13 +61,20 @@ export const ScreenSharePanel: React.FC = () => {
   };
 
   const captureFrame = () => {
-    if (!videoRef.current || !canvasRef.current || !isSharing) return;
+    if (!videoRef.current || !isSharingRef.current) return;
 
-    const canvas = canvasRef.current;
+    // Create canvas if it doesn't exist (using a ref-less approach for the invisible canvas)
+    let canvas = canvasRef.current;
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      (canvasRef as any).current = canvas;
+    }
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const video = videoRef.current;
+    if (video.videoWidth === 0 || video.videoHeight === 0) return;
     
     // Target 768x768
     canvas.width = 768;
@@ -78,37 +103,19 @@ export const ScreenSharePanel: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-      <div className="flex bg-gray-50 border-b border-gray-200 p-3 justify-between items-center">
-         <h2 className="font-semibold text-gray-700 items-center justify-center flex gap-2">📺 Screen Share</h2>
-         <button 
-           onClick={isSharing ? stopSharing : startSharing}
-           disabled={!isConnected}
-           className={`px-4 py-2 font-semibold text-white rounded text-sm transition-colors ${
-             !isConnected ? 'bg-gray-400 cursor-not-allowed' :
-             isSharing ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'
-           }`}
-         >
-           {isSharing ? 'Stop Sharing' : 'Share Screen'}
-         </button>
-      </div>
-
-      <div className="flex-1 min-h-[400px] relative bg-slate-900 group flex items-center justify-center overflow-hidden">
-         {!isSharing && (
-           <div className="text-gray-400 font-medium">
-             Share your screen to get started
-           </div>
-         )}
-         <video 
-           ref={videoRef} 
-           autoPlay 
-           playsInline 
-           muted 
-           className={`max-w-full max-h-full object-contain ${!isSharing && 'hidden'}`}
-         />
-         {/* Hidden canvas for image extraction */}
-         <canvas ref={canvasRef} className="hidden" />
-      </div>
-    </div>
+    <ScreenShareContext.Provider value={{ isSharing, startSharing, stopSharing, videoRef }}>
+      {children}
+      {/* Hidden video element to hold the stream for capturing */}
+      <video ref={videoRef} autoPlay playsInline muted
+        className="fixed top-0 left-0 w-px h-px opacity-0 pointer-events-none" />
+    </ScreenShareContext.Provider>
   );
+};
+
+export const useScreenShare = () => {
+  const context = useContext(ScreenShareContext);
+  if (context === undefined) {
+    throw new Error('useScreenShare must be used within a ScreenShareProvider');
+  }
+  return context;
 };

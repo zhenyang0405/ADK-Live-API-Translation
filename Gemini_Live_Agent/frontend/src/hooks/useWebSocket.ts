@@ -19,6 +19,7 @@ export function useWebSocket(token: string | null) {
   const ws = useRef<WebSocket | null>(null);
   const reconnectAttempt = useRef(0);
   const maxReconnects = 3;
+  const connectionId = useRef(0);
 
   const audioQueueRef = useRef<string[]>([]);
   const [audioTrigger, setAudioTrigger] = useState(0);
@@ -26,11 +27,14 @@ export function useWebSocket(token: string | null) {
   const connect = useCallback(() => {
     if (!token || ws.current?.readyState === WebSocket.OPEN) return;
 
+    const thisConnectionId = ++connectionId.current;
+
     try {
       const socket = new WebSocket(`${config.streamingUrl}/ws`);
       ws.current = socket;
 
       socket.onopen = () => {
+        if (connectionId.current !== thisConnectionId) return;
         console.log("WebSocket connection established");
         setIsConnected(true);
         setError(null);
@@ -41,7 +45,7 @@ export function useWebSocket(token: string | null) {
       };
 
       socket.onmessage = (event) => {
-        console.log("Received message from server:", event.data);
+        if (connectionId.current !== thisConnectionId) return;
         try {
           const msg = JSON.parse(event.data) as DownstreamMessage;
 
@@ -89,10 +93,11 @@ export function useWebSocket(token: string | null) {
       };
 
       socket.onclose = () => {
+        if (connectionId.current !== thisConnectionId) return;
         setIsConnected(false);
         setIsAuthenticated(false);
         ws.current = null;
-        
+
         if (reconnectAttempt.current < maxReconnects) {
           reconnectAttempt.current++;
           setTimeout(() => {
@@ -112,10 +117,11 @@ export function useWebSocket(token: string | null) {
   useEffect(() => {
     connect();
     return () => {
+      connectionId.current++; // Invalidate stale callbacks
       if (ws.current) {
-        ws.current.onerror = null;
-        ws.current.onclose = null;
+        ws.current.onclose = null; // Prevent reconnect on intentional close
         ws.current.close();
+        ws.current = null;
       }
     };
   }, [connect]);

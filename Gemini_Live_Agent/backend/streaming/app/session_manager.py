@@ -22,7 +22,7 @@ def create_run_config() -> RunConfig:
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                    voice_name="Kore"  # Test others: Puck, Charon, Aoede
+                    voice_name="Puck"  # Test others: Puck, Charon, Aoede
                 )
             )
         ),

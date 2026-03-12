@@ -1,4 +1,5 @@
 from google.adk.agents import Agent
+from streaming.app.tools.translation import display_translation
 
 SYSTEM_INSTRUCTION = """
 IDENTITY:
@@ -45,8 +46,11 @@ TRANSLATION QUALITY:
 - When multiple valid translations exist, mention the alternatives briefly.
 - Do not translate proper nouns (names, brands, institutions) unless asked.
 - For acronyms, give the full translated form on first encounter, then use the acronym.
-
 """
+
+# TOOL USAGE:
+# - ALWAYS call display_translation when translating any section of text.
+#   The user needs to see the translation displayed in the annotation panel, not just hear it.
 
 agent = Agent(
     name="dr_lingua",

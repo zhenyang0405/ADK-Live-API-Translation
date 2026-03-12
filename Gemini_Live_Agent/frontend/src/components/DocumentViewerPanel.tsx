@@ -14,6 +14,7 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
 }) => {
   const { sendMessage, isConnected } = useWebSocketContext();
   const [currentPage, setCurrentPage] = useState(0);
+  const [scale, setScale] = useState(1.0);
   const [sending, setSending] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -42,6 +43,10 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
   const goToNext = () =>
     setCurrentPage((p) => Math.min(totalPages - 1, p + 1));
 
+  const zoomIn = () => setScale((s) => Math.min(s + 0.1, 3.0));
+  const zoomOut = () => setScale((s) => Math.max(s - 0.1, 0.5));
+  const resetZoom = () => setScale(1.0);
+
   return (
     <div className="flex flex-col h-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
       {/* Header */}
@@ -56,7 +61,34 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
           </h2>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Zoom controls */}
+          <div className="flex items-center gap-1 border-r border-gray-300 pr-2 mr-1">
+            <button
+              onClick={zoomOut}
+              disabled={scale <= 0.5}
+              className="p-1 px-2 text-xs font-bold bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40"
+              title="Zoom Out"
+            >
+              −
+            </button>
+            <button
+              onClick={resetZoom}
+              className="px-2 py-1 text-[10px] font-medium text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded min-w-[45px] text-center"
+              title="Reset Zoom"
+            >
+              {Math.round(scale * 100)}%
+            </button>
+            <button
+              onClick={zoomIn}
+              disabled={scale >= 3.0}
+              className="p-1 px-2 text-xs font-bold bg-white border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40"
+              title="Zoom In"
+            >
+              +
+            </button>
+          </div>
+
           {/* Page navigation */}
           {totalPages > 1 && (
             <div className="flex items-center gap-1">
@@ -91,24 +123,18 @@ export const DocumentViewerPanel: React.FC<DocumentViewerPanelProps> = ({
             </div>
           )}
 
-          {/* Back button */}
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-xs font-semibold bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700 flex items-center gap-1"
-          >
-            📺 Screen Share
-          </button>
         </div>
       </div>
 
       {/* Document preview */}
       <div className="flex-1 relative bg-slate-100 flex items-center justify-center overflow-auto p-4">
         {currentBase64 ? (
-          <img
-            src={`data:image/jpeg;base64,${currentBase64}`}
-            alt={`Page ${currentPage + 1} of ${doc.name}`}
-            className="max-w-full max-h-full object-contain rounded shadow-md"
-          />
+            <img
+              src={`data:image/jpeg;base64,${currentBase64}`}
+              alt={`Page ${currentPage + 1} of ${doc.name}`}
+              className="max-w-full max-h-full object-contain rounded shadow-md transition-transform duration-200 ease-out origin-center"
+              style={{ transform: `scale(${scale})` }}
+            />
         ) : (
           <div className="text-gray-400 font-medium">
             No content to display

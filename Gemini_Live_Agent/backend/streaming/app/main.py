@@ -33,7 +33,17 @@ async def health_check():
     return {"status": "ok", "service": "dr-lingua-streaming"}
 
 
-async def upstream_task(websocket: WebSocket, live_request_queue: LiveRequestQueue):
+async def safe_send(websocket: WebSocket, data: dict, shutdown_event: asyncio.Event):
+    """Send JSON to WebSocket, suppressing errors if shutdown is in progress."""
+    if shutdown_event.is_set():
+        return
+    try:
+        await websocket.send_json(data)
+    except Exception:
+        shutdown_event.set()
+
+
+async def upstream_task(websocket: WebSocket, live_request_queue: LiveRequestQueue, shutdown_event: asyncio.Event):
     """Receive messages from browser and enqueue to LiveRequestQueue."""
     try:
         while True:
@@ -72,8 +82,11 @@ async def upstream_task(websocket: WebSocket, live_request_queue: LiveRequestQue
         logger.info("Upstream task: WebSocket disconnected")
     except Exception as e:
         logger.error(f"Upstream error: {e}")
+    finally:
+        shutdown_event.set()
+        live_request_queue.close()
 
-async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id: str, live_request_queue: LiveRequestQueue, run_config):
+async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id: str, live_request_queue: LiveRequestQueue, run_config, shutdown_event: asyncio.Event):
     """Process events from run_live() and send to browser.
 
     Automatically reconnects when the Gemini Live API drops the connection.
@@ -81,7 +94,7 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
     max_retries = 5
     retry_count = 0
 
-    while retry_count < max_retries:
+    while retry_count < max_retries and not shutdown_event.is_set():
         try:
             async for event in runner.run_live(
                 user_id=user_id,
@@ -89,46 +102,46 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
                 live_request_queue=live_request_queue,
                 run_config=run_config,
             ):
-                # Reset retry count on successful event
-                retry_count = 0
+                if shutdown_event.is_set():
+                    return
 
                 # Handle content parts (audio output + tool calls)
                 if event.content and event.content.parts:
                     for part in event.content.parts:
                         if part.inline_data:
                             audio_b64 = base64.b64encode(part.inline_data.data).decode("utf-8")
-                            await websocket.send_json({
+                            await safe_send(websocket, {
                                 "type": "audio",
                                 "data": audio_b64
-                            })
+                            }, shutdown_event)
                         if part.function_call:
-                            await websocket.send_json({
+                            await safe_send(websocket, {
                                 "type": "tool_call",
                                 "name": part.function_call.name,
                                 "args": part.function_call.args
-                            })
+                            }, shutdown_event)
 
                 # Handle transcription events
                 if event.input_transcription and event.input_transcription.text:
-                    await websocket.send_json({
+                    await safe_send(websocket, {
                         "type": "transcription",
                         "role": "user",
                         "text": event.input_transcription.text
-                    })
+                    }, shutdown_event)
                 if event.output_transcription and event.output_transcription.text:
-                    await websocket.send_json({
+                    await safe_send(websocket, {
                         "type": "transcription",
                         "role": "agent",
                         "text": event.output_transcription.text
-                    })
+                    }, shutdown_event)
 
                 # Handle turn completion
                 if event.turn_complete:
-                    await websocket.send_json({"type": "turn_complete"})
+                    await safe_send(websocket, {"type": "turn_complete"}, shutdown_event)
 
                 # Handle interruption
                 if event.interrupted:
-                    await websocket.send_json({"type": "interrupted"})
+                    await safe_send(websocket, {"type": "interrupted"}, shutdown_event)
 
             # run_live() ended normally (iterator exhausted)
             break
@@ -141,18 +154,12 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
             logger.warning(f"Gemini connection dropped (attempt {retry_count}/{max_retries}): {e}")
             if retry_count >= max_retries:
                 logger.error(f"Downstream giving up after {max_retries} retries")
-                try:
-                    await websocket.send_json({"type": "error", "message": "Gemini connection lost"})
-                except Exception:
-                    pass
+                await safe_send(websocket, {"type": "error", "message": "Gemini connection lost"}, shutdown_event)
                 return
             # Brief pause before reconnecting
             await asyncio.sleep(1)
             logger.info(f"Reconnecting to Gemini Live API (attempt {retry_count})...")
-            try:
-                await websocket.send_json({"type": "reconnecting"})
-            except Exception:
-                return
+            await safe_send(websocket, {"type": "reconnecting"}, shutdown_event)
 
 
 @app.websocket("/ws")
@@ -198,14 +205,16 @@ async def websocket_endpoint(websocket: WebSocket):
         return
 
     # Phase 3: Streaming Loop
+    shutdown_event = asyncio.Event()
     try:
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(upstream_task(websocket, live_request_queue))
-            tg.create_task(downstream_task(websocket, runner, uid, session_id, live_request_queue, run_config))
+            tg.create_task(upstream_task(websocket, live_request_queue, shutdown_event))
+            tg.create_task(downstream_task(websocket, runner, uid, session_id, live_request_queue, run_config, shutdown_event))
     except* WebSocketDisconnect:
         logger.info(f"Client {uid} disconnected")
     except* Exception as e:
         logger.error(f"Session error for {uid}: {e}")
     finally:
         # Phase 4: Cleanup — ALWAYS close the queue
+        shutdown_event.set()
         live_request_queue.close()

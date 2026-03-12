@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { WebSocketProvider } from "@/components/WebSocketManager";
-import { ScreenSharePanel } from "@/components/ScreenSharePanel";
+import { ScreenShareProvider, useScreenShare } from "@/components/ScreenShareManager";
 import { AnnotationPanel } from "@/components/AnnotationPanel";
 import { AudioManager } from "@/components/AudioManager";
 import { TranscriptDisplay } from "@/components/TranscriptDisplay";
@@ -32,7 +32,8 @@ export default function Home() {
 
   return (
     <WebSocketProvider token={token}>
-      <main className="flex flex-col h-screen bg-[#F8FAFC] overflow-hidden">
+      <ScreenShareProvider>
+        <main className="flex flex-col h-screen bg-[#F8FAFC] overflow-hidden">
         {/* Header */}
         <header className="bg-white border-b border-gray-200 px-6 py-3 shrink-0 flex items-center justify-between z-10 shadow-sm">
            <div className="flex items-center gap-2">
@@ -43,7 +44,9 @@ export default function Home() {
            </div>
            
            {/* Global status indicator */}
-           <div className="flex items-center gap-2 pr-2">
+           <div className="flex items-center gap-4 pr-2">
+             <ScreenShareToggle />
+             <div className="h-6 w-px bg-gray-200" />
              <ConnectionStatus />
            </div>
         </header>
@@ -51,13 +54,13 @@ export default function Home() {
         {/* Main Content Area */}
         <MainContent />
       </main>
+      </ScreenShareProvider>
     </WebSocketProvider>
   );
 }
 
 // Extracted so we can use hooks inside WebSocketProvider context
 function MainContent() {
-  const [leftPanelMode, setLeftPanelMode] = React.useState<"screenshare" | "document">("screenshare");
   const [docs, setDocs] = React.useState<UploadedDoc[]>([]);
   const [activeDoc, setActiveDoc] = React.useState<UploadedDoc | null>(null);
 
@@ -80,11 +83,10 @@ function MainContent() {
 
   const handleDocClick = (doc: UploadedDoc) => {
     setActiveDoc(doc);
-    setLeftPanelMode("document");
   };
 
   const handleCloseDoc = () => {
-    setLeftPanelMode("screenshare");
+    setActiveDoc(null);
   };
 
   return (
@@ -104,14 +106,27 @@ function MainContent() {
             />
           </div>
 
-          {/* Main left panel - screen share OR document viewer */}
+          {/* Main left panel - document viewer or placeholder */}
           <div className="flex-1 overflow-hidden">
-            {leftPanelMode === "screenshare" ? (
-              <ScreenSharePanel />
+            {activeDoc ? (
+              <DocumentViewerPanel doc={activeDoc} onClose={handleCloseDoc} />
             ) : (
-              activeDoc && (
-                <DocumentViewerPanel doc={activeDoc} onClose={handleCloseDoc} />
-              )
+              <div className="flex flex-col h-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden items-center justify-center p-8 text-center">
+                <div className="bg-blue-50 p-4 rounded-full mb-4">
+                  <span className="text-3xl">📄</span>
+                </div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">Upload a Research Document</h3>
+                <p className="text-gray-500 max-w-sm">
+                  Choose a document from the list above or upload a new one to start your research translation session.
+                </p>
+                <div className="mt-6 flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-3 py-1.5 rounded-full font-medium border border-amber-100">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                  </span>
+                  ADK Live Agent is ready for screen capture
+                </div>
+              </div>
             )}
           </div>
 
@@ -167,5 +182,27 @@ function ConnectionStatus() {
       </span>
       Live Session Active
     </div>
+  );
+}
+
+function ScreenShareToggle() {
+  const { isSharing, startSharing, stopSharing } = useScreenShare();
+  const { isConnected } = require("@/components/WebSocketManager").useWebSocketContext();
+
+  return (
+    <button
+      onClick={isSharing ? stopSharing : startSharing}
+      disabled={!isConnected}
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-md font-semibold text-sm transition-all shadow-sm ${
+        !isConnected
+          ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+          : isSharing
+          ? "bg-red-50 text-red-600 hover:bg-red-100 border border-red-100"
+          : "bg-blue-600 text-white hover:bg-blue-700 hover:shadow-md"
+      }`}
+    >
+      <span className="text-base">{isSharing ? "⏹" : "📺"}</span>
+      {isSharing ? "Stop Sharing" : "Share Screen"}
+    </button>
   );
 }
