@@ -11,8 +11,8 @@ interface WebSocketContextProps {
   sendMessage: (msg: UpstreamMessage) => void;
   annotations: AnnotationItem[];
   transcripts: Transcript[];
-  agentStatus: "idle" | "speaking" | "thinking";
-  setAgentStatus: (status: "idle" | "speaking" | "thinking") => void;
+  agentStatus: "idle" | "speaking" | "thinking" | "interrupted";
+  setAgentStatus: (status: "idle" | "speaking" | "thinking" | "interrupted") => void;
   error: string | null;
   disconnect: () => void;
   audioTrigger: number;

@@ -137,7 +137,7 @@ export const AudioManager: React.FC = () => {
 
   // Clean up interrupted audio
   useEffect(() => {
-     if(agentStatus === "idle") {
+     if(agentStatus === "idle" || agentStatus === "interrupted") {
          playbackQueueRef.current.forEach(node => {
              try { node.stop(); } catch(e) {}
              node.disconnect();
@@ -156,6 +156,7 @@ export const AudioManager: React.FC = () => {
             {agentStatus === "idle" && <span className="text-gray-500">💤 Idle</span>}
             {agentStatus === "speaking" && <span className="text-green-600 animate-pulse">🔊 Speaking...</span>}
             {agentStatus === "thinking" && <span className="text-amber-500">⏳ Thinking...</span>}
+            {agentStatus === "interrupted" && <span className="text-red-500 animate-pulse">✋ Interrupted</span>}
           </div>
       </div>
       <div>

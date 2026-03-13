@@ -15,7 +15,8 @@ export function useWebSocket(token: string | null) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationItem[]>([]);
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
-  const [agentStatus, setAgentStatus] = useState<"idle" | "speaking" | "thinking">("idle");
+  const [agentStatus, setAgentStatus] = useState<"idle" | "speaking" | "thinking" | "interrupted">("idle");
+  const interruptedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const ws = useRef<WebSocket | null>(null);
@@ -85,7 +86,9 @@ export function useWebSocket(token: string | null) {
               setAgentStatus("idle");
               break;
             case "interrupted":
-              setAgentStatus("idle");
+              if (interruptedTimerRef.current) clearTimeout(interruptedTimerRef.current);
+              setAgentStatus("interrupted");
+              interruptedTimerRef.current = setTimeout(() => setAgentStatus("idle"), 8000);
               break;
             case "error":
               setError(msg.message);
