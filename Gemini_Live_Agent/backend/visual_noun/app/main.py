@@ -105,12 +105,6 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
                 if shutdown_event.is_set():
                     return
 
-                logger.debug(f"[downstream] Event: turn_complete={event.turn_complete}, "
-                             f"interrupted={event.interrupted}, "
-                             f"has_content={bool(event.content and event.content.parts)}, "
-                             f"has_input_tx={bool(event.input_transcription)}, "
-                             f"has_output_tx={bool(event.output_transcription)}")
-
                 # Handle content parts (audio output + tool calls + tool responses)
                 if event.content and event.content.parts:
                     for part in event.content.parts:
@@ -217,7 +211,7 @@ async def websocket_endpoint(websocket: WebSocket):
         await create_session(user_id=uid, session_id=session_id)
         live_request_queue = LiveRequestQueue()
         run_config = create_run_config()
-        logger.info(f"[ws] Session created successfully, run_config={run_config}")
+        logger.info(f"[ws] Session created successfully")
     except Exception as e:
         logger.error(f"Failed to create session: {e}", exc_info=True)
         await websocket.close(code=1011, reason="Session Init Error")

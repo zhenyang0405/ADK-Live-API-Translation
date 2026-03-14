@@ -33,6 +33,7 @@ def create_run_config() -> RunConfig:
             sliding_window=types.SlidingWindow(target_tokens=60000),
         ),
         session_resumption=types.SessionResumptionConfig(),
+        proactivity={'proactive_audio': True},
     )
 
 async def create_session(user_id: str, session_id: str):
