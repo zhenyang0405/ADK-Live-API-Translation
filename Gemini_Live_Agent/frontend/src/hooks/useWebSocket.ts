@@ -27,6 +27,10 @@ export function useWebSocket(token: string | null) {
   const audioQueueRef = useRef<string[]>([]);
   const [audioTrigger, setAudioTrigger] = useState(0);
 
+  // Buffer transcription tokens until turn_complete
+  const inputTranscriptBuffer = useRef("");
+  const outputTranscriptBuffer = useRef("");
+
   const connect = useCallback(() => {
     if (!token || ws.current?.readyState === WebSocket.OPEN) return;
 
@@ -74,22 +78,50 @@ export function useWebSocket(token: string | null) {
               break;
             case "transcription":
               if (msg.text.trim()) {
-                 setTranscripts(prev => [...prev, {
-                    role: msg.role,
-                    text: msg.text,
-                    timestamp: Date.now()
-                 }]);
-                 if(msg.role === "user") setAgentStatus("thinking");
+                if (msg.role === "user") {
+                  inputTranscriptBuffer.current += msg.text;
+                  setAgentStatus("thinking");
+                } else {
+                  outputTranscriptBuffer.current += msg.text;
+                }
               }
               break;
-            case "turn_complete":
+            case "turn_complete": {
+              // Flush buffered transcripts as complete sentences
+              const inputText = inputTranscriptBuffer.current.trim();
+              const outputText = outputTranscriptBuffer.current.trim();
+              if (inputText || outputText) {
+                setTranscripts(prev => {
+                  const next = [...prev];
+                  if (inputText) next.push({ role: "user", text: inputText, timestamp: Date.now() });
+                  if (outputText) next.push({ role: "agent", text: outputText, timestamp: Date.now() });
+                  return next;
+                });
+              }
+              inputTranscriptBuffer.current = "";
+              outputTranscriptBuffer.current = "";
               setAgentStatus("idle");
               break;
-            case "interrupted":
+            }
+            case "interrupted": {
+              // Flush any buffered transcripts before marking interrupted
+              const intInputText = inputTranscriptBuffer.current.trim();
+              const intOutputText = outputTranscriptBuffer.current.trim();
+              if (intInputText || intOutputText) {
+                setTranscripts(prev => {
+                  const next = [...prev];
+                  if (intInputText) next.push({ role: "user", text: intInputText, timestamp: Date.now() });
+                  if (intOutputText) next.push({ role: "agent", text: intOutputText, timestamp: Date.now() });
+                  return next;
+                });
+              }
+              inputTranscriptBuffer.current = "";
+              outputTranscriptBuffer.current = "";
               if (interruptedTimerRef.current) clearTimeout(interruptedTimerRef.current);
               setAgentStatus("interrupted");
               interruptedTimerRef.current = setTimeout(() => setAgentStatus("idle"), 8000);
               break;
+            }
             case "error":
               setError(msg.message);
               break;

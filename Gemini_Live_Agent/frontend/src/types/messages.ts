@@ -56,3 +56,34 @@ export interface TranslationDoc {
   image_description?: string;
   target_language?: string;
 }
+
+// Visual Noun card data
+export interface VisualNounCard {
+  id: string;
+  term: string;
+  translatedTerm: string;
+  briefExplanation: string;
+  imageUrl: string | null; // null while loading
+  timestamp: number;
+}
+
+// Transcript entry (used by visual noun conversation)
+export interface Transcript {
+  role: "user" | "agent";
+  language: string;
+  text: string;
+  timestamp: number;
+  cards?: VisualNounCard[];
+}
+
+// Downstream message types for visual-noun service
+export type VisualNounDownstreamMessage =
+  | { type: "auth_success"; uid: string; session_id: string }
+  | { type: "audio"; data: string }
+  | { type: "tool_call"; name: string; args: Record<string, any> }
+  | { type: "visual_noun_card"; data: { status: string; image_url?: string; term: string; translated_term: string; brief_explanation: string } }
+  | { type: "transcription"; role: "user" | "agent"; language: string; text: string }
+  | { type: "turn_complete" }
+  | { type: "interrupted" }
+  | { type: "reconnecting" }
+  | { type: "error"; message: string };
