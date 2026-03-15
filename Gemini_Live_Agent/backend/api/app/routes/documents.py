@@ -3,6 +3,7 @@ import time
 from fastapi import APIRouter, Request, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from shared import storage_client
+from shared.firestore_client import db
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -111,3 +112,33 @@ async def list_documents(request: Request):
     ]
 
     return JSONResponse({"documents": documents})
+
+
+@router.get("/translations/{doc_name}/sign-urls")
+async def sign_translation_urls(doc_name: str, request: Request):
+    """
+    Re-sign expired image URLs for translation docs.
+    Returns: { signed_urls: { doc_id: signed_url } }
+    """
+    uid = getattr(request.state, "uid", None)
+    if not uid:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    col_ref = db.collection("translations").document(uid).collection(doc_name)
+    snapshot = await col_ref.get()
+
+    gcs_paths: dict[str, str] = {}  # doc_id -> gcs_path
+    for doc in snapshot:
+        data = doc.to_dict()
+        if data.get("gcs_path"):
+            gcs_paths[doc.id] = data["gcs_path"]
+
+    if not gcs_paths:
+        return JSONResponse({"signed_urls": {}})
+
+    signed = await storage_client.generate_signed_urls_batch(
+        GCS_BUCKET, list(gcs_paths.values()), expiration_minutes=1440
+    )
+
+    result = {doc_id: signed[path] for doc_id, path in gcs_paths.items()}
+    return JSONResponse({"signed_urls": result})

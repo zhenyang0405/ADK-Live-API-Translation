@@ -19,7 +19,7 @@ export const AnnotationCard: React.FC<Props> = ({ doc }) => {
     <div className="bg-white rounded shadow-sm border border-gray-200 mb-4 p-4 overflow-hidden">
       <div className="flex justify-between items-center border-b border-gray-100 pb-2 mb-3">
         <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-          <span>{doc.image_url ? '🖼️' : '📄'}</span> {doc.section_id || 'Translation'}
+          <span>{(doc.image_url || doc.gcs_path) ? '🖼️' : '📄'}</span> {doc.section_id || 'Translation'}
         </h3>
         <span className="text-xs text-gray-400">{timeStr}</span>
       </div>
@@ -61,7 +61,7 @@ export const AnnotationCard: React.FC<Props> = ({ doc }) => {
         </div>
       )}
       
-      {!doc.translated_text && !doc.source_text && (
+      {!doc.translated_text && !doc.source_text && !doc.image_url && !doc.gcs_path && (
         <p className="text-gray-400 italic text-sm">Empty translation content</p>
       )}
 

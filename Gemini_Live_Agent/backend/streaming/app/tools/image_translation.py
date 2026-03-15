@@ -10,7 +10,7 @@ from google.adk.tools.tool_context import ToolContext
 from google.cloud import firestore
 
 from shared.firestore_client import db
-from shared.storage_client import upload_file, generate_signed_url
+from shared.storage_client import upload_file
 from streaming.app.active_documents import active_documents
 from streaming.app.latest_frames import latest_frames
 
@@ -62,10 +62,7 @@ async def _translate_and_save(
     blob_path = f"image_translations/{user_id}/{uuid.uuid4().hex}.png"
     await upload_file(GCS_BUCKET, blob_path, image_bytes, "image/png")
 
-    # Generate signed URL (24 hour expiry)
-    signed_url = await generate_signed_url(GCS_BUCKET, blob_path, expiration_minutes=1440)
-
-    # Write to Firestore
+    # Write to Firestore (store gcs_path only; signed URL is generated on read)
     doc_name = active_documents.get(session_id, "unknown")
     doc_ref = db.collection("translations").document(user_id).collection(doc_name).document()
     await doc_ref.set({
@@ -73,7 +70,7 @@ async def _translate_and_save(
         "source_text": "",
         "translated_text": "",
         "nuance_notes": nuance_notes,
-        "image_url": signed_url,
+        "gcs_path": blob_path,
         "image_description": description,
         "target_language": target_language,
         "timestamp": firestore.SERVER_TIMESTAMP,

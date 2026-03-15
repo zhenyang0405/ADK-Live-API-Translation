@@ -53,6 +53,7 @@ export interface TranslationDoc {
   nuance_notes: string;
   timestamp: any; // Firestore Timestamp
   image_url?: string;
+  gcs_path?: string;
   image_description?: string;
   target_language?: string;
 }
