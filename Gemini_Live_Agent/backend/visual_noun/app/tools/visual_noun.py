@@ -4,9 +4,19 @@ import uuid
 
 from google import genai
 from google.genai import types
+from google.adk.tools import FunctionTool
 from google.adk.tools.tool_context import ToolContext
 
 from shared.storage_client import upload_file, generate_signed_url
+
+
+class NonBlockingFunctionTool(FunctionTool):
+    """A FunctionTool that declares NON_BLOCKING behavior for async execution."""
+
+    def _get_declaration(self):
+        declaration = super()._get_declaration()
+        declaration.behavior = types.Behavior.NON_BLOCKING
+        return declaration
 
 GCS_BUCKET = os.environ.get("GCS_BUCKET", "")
 
@@ -43,7 +53,7 @@ async def show_visual_noun(
     client = genai.Client()
     response = await asyncio.to_thread(
         client.models.generate_content,
-        model="gemini-3.1-flash-image-preview",
+        model="gemini-2.5-flash-image",
         contents=[
             types.Content(parts=[
                 types.Part(text=
@@ -55,7 +65,17 @@ async def show_visual_noun(
             ])
         ],
         config=types.GenerateContentConfig(
-            response_modalities=["IMAGE", "TEXT"],
+        #     thinking_config=types.ThinkingConfig(
+        #     thinking_level="MINIMAL",
+        # ),
+        image_config = types.ImageConfig(
+            aspect_ratio="4:3",
+            # image_size="512",
+        ),
+        response_modalities=[
+            "IMAGE",
+            "TEXT",
+        ],
         ),
     )
 
@@ -68,6 +88,7 @@ async def show_visual_noun(
 
     if not image_bytes:
         return {
+            "scheduling": "SILENT",
             "status": "error",
             "message": "Image generation did not return an image.",
             "term": term,
@@ -83,9 +104,13 @@ async def show_visual_noun(
     signed_url = await generate_signed_url(GCS_BUCKET, blob_path, expiration_minutes=1440)
 
     return {
+        "scheduling": "SILENT",
         "status": "success",
         "image_url": signed_url,
         "term": term,
         "translated_term": translated_term,
         "brief_explanation": brief_explanation,
     }
+
+
+show_visual_noun_tool = NonBlockingFunctionTool(func=show_visual_noun)

@@ -1,5 +1,5 @@
 from google.adk.agents import Agent
-from visual_noun.app.tools.visual_noun import show_visual_noun
+from visual_noun.app.tools.visual_noun import show_visual_noun_tool
 
 SYSTEM_INSTRUCTION = """
 IDENTITY:
@@ -125,5 +125,5 @@ agent = Agent(
     name="dr_lingua_visual_noun",
     model="gemini-2.5-flash-native-audio-preview-12-2025",
     instruction=SYSTEM_INSTRUCTION,
-    tools=[show_visual_noun],
+    tools=[show_visual_noun_tool],
 )

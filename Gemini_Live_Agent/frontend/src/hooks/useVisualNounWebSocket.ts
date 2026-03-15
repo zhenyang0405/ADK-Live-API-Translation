@@ -31,6 +31,9 @@ export function useVisualNounWebSocket(token: string | null) {
   const outputTranscriptBuffer = useRef("");
   const outputLanguageBuffer = useRef("");
 
+  // Track whether the current turn has been flushed (for late transcriptions)
+  const turnFlushedRef = useRef(false);
+
   // Pending visual noun cards for the current turn
   const pendingCardsRef = useRef<VisualNounCard[]>([]);
 
@@ -136,14 +139,26 @@ export function useVisualNounWebSocket(token: string | null) {
               break;
 
             case "transcription":
+              console.log("[WS] transcription received:", msg.role, msg.language, msg.text?.substring(0, 50));
               if (msg.text.trim()) {
                 if (msg.role === "user") {
                   inputTranscriptBuffer.current = msg.text;
                   inputLanguageBuffer.current = msg.language;
+                  turnFlushedRef.current = false;
                   setAgentStatus("thinking");
                 } else {
-                  outputTranscriptBuffer.current = msg.text;
-                  outputLanguageBuffer.current = msg.language;
+                  if (turnFlushedRef.current) {
+                    // Late output transcription arrived after turn_complete — append directly
+                    setTranscripts(prev => [...prev, {
+                      role: "agent" as const,
+                      language: msg.language,
+                      text: msg.text,
+                      timestamp: Date.now(),
+                    }]);
+                  } else {
+                    outputTranscriptBuffer.current = msg.text;
+                    outputLanguageBuffer.current = msg.language;
+                  }
                 }
               }
               break;
@@ -170,6 +185,7 @@ export function useVisualNounWebSocket(token: string | null) {
               outputTranscriptBuffer.current = "";
               outputLanguageBuffer.current = "";
               pendingCardsRef.current = [];
+              turnFlushedRef.current = true;
               setIsTurnComplete(true);
               break;
             }
@@ -196,6 +212,7 @@ export function useVisualNounWebSocket(token: string | null) {
               outputTranscriptBuffer.current = "";
               outputLanguageBuffer.current = "";
               pendingCardsRef.current = [];
+              turnFlushedRef.current = true;
               if (interruptedTimerRef.current) clearTimeout(interruptedTimerRef.current);
               setAgentStatus("interrupted");
               interruptedTimerRef.current = setTimeout(() => setAgentStatus("idle"), 8000);

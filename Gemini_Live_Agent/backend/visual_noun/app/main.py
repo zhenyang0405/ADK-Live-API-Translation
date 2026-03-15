@@ -105,6 +105,7 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
 
     while retry_count < max_retries and not shutdown_event.is_set():
         try:
+            last_input_language = "EN"
             logger.info(f"[downstream] Starting run_live for user={user_id}, session={session_id}")
             async for event in runner.run_live(
                 user_id=user_id,
@@ -146,22 +147,35 @@ async def downstream_task(websocket: WebSocket, runner, user_id: str, session_id
 
                 # Handle transcription events
                 if event.input_transcription and event.input_transcription.text:
+                    last_input_language = detect_language(event.input_transcription.text)
+                    logger.info(f"[downstream] input_transcription: lang={last_input_language}, text='{event.input_transcription.text[:80]}'")
                     await safe_send(websocket, {
                         "type": "transcription",
                         "role": "user",
-                        "language": detect_language(event.input_transcription.text),
+                        "language": last_input_language,
                         "text": event.input_transcription.text
                     }, shutdown_event)
+
                 if event.output_transcription and event.output_transcription.text:
-                    await safe_send(websocket, {
-                        "type": "transcription",
-                        "role": "agent",
-                        "language": detect_language(event.output_transcription.text),
-                        "text": event.output_transcription.text
-                    }, shutdown_event)
+                    text = event.output_transcription.text
+                    if '<ctrl46>' in text:
+                        text = text.replace('<ctrl46>', '')
+                    if '"result":' in text and '"function":' in text:
+                        logger.debug("[downstream] Skipping tool response in transcription")
+                    else:
+                        output_language = "EN" if last_input_language == "JP" else "JP"
+                        logger.info(f"[downstream] output_transcription: text='{text[:80] if text else 'NONE'}'")
+                        logger.info(f"[downstream] Sending agent transcription: lang={output_language}")
+                        await safe_send(websocket, {
+                            "type": "transcription",
+                            "role": "agent",
+                            "language": output_language,
+                            "text": text
+                        }, shutdown_event)
 
                 # Handle turn completion
                 if event.turn_complete:
+                    logger.info(f"[downstream] turn_complete fired")
                     await safe_send(websocket, {"type": "turn_complete"}, shutdown_event)
 
                 # Handle interruption
