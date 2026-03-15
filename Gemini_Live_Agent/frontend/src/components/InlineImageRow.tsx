@@ -10,8 +10,8 @@ interface InlineImageRowProps {
 }
 
 export default function InlineImageRow({ cards, onThumbClick, onStackClick }: InlineImageRowProps) {
-  const visible = cards.slice(0, 3);
-  const overflow = cards.length > 3 ? cards.slice(3) : null;
+  const visible = cards.slice(0, 2);
+  const overflow = cards.length > 2 ? cards.slice(2) : null;
 
   return (
     <div className="flex gap-1.5 mt-2 items-start flex-nowrap">
@@ -32,7 +32,7 @@ export default function InlineImageRow({ cards, onThumbClick, onStackClick }: In
               <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#1D9E75]" />
             </div>
           )}
-          <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 text-center text-white text-[9px] font-medium leading-tight"
+          <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 text-center text-white text-[10px] font-medium leading-tight"
             style={{ background: "linear-gradient(transparent, rgba(0,0,0,0.65))" }}
           >
             {card.translatedTerm}
@@ -42,13 +42,13 @@ export default function InlineImageRow({ cards, onThumbClick, onStackClick }: In
 
       {overflow && overflow.length > 0 && (
         <div
-          className="relative w-[72px] h-[72px] shrink-0 cursor-pointer"
+          className="relative w-[90px] h-[90px] shrink-0 cursor-pointer"
           onClick={() => onStackClick(cards)}
         >
           {/* Back card */}
-          <div className="absolute top-1 left-1 w-[72px] h-[72px] rounded-lg overflow-hidden border border-gray-200 bg-gray-100" />
+          <div className="absolute top-1 left-1 w-[90px] h-[90px] rounded-lg overflow-hidden border border-gray-200 bg-gray-400" />
           {/* Front card */}
-          <div className="absolute top-0 left-0 w-[72px] h-[72px] rounded-lg overflow-hidden border border-gray-200">
+          <div className="absolute top-0 left-0 w-[90px] h-[90px] rounded-lg overflow-hidden border border-gray-200">
             {overflow[0].imageUrl ? (
               <img
                 src={overflow[0].imageUrl}
@@ -58,7 +58,7 @@ export default function InlineImageRow({ cards, onThumbClick, onStackClick }: In
             ) : (
               <div className="w-full h-full bg-gray-100" />
             )}
-            <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 text-center text-white text-[9px] font-medium leading-tight"
+            <div className="absolute bottom-0 left-0 right-0 px-1 py-0.5 text-center text-white text-[10px] font-medium leading-tight"
               style={{ background: "linear-gradient(transparent, rgba(0,0,0,0.65))" }}
             >
               {overflow[0].translatedTerm}
