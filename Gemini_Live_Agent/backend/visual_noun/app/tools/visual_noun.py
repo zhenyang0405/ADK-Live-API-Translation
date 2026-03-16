@@ -68,17 +68,13 @@ async def show_visual_noun(
             ])
         ],
         config=types.GenerateContentConfig(
-        #     thinking_config=types.ThinkingConfig(
-        #     thinking_level="MINIMAL",
-        # ),
-        image_config = types.ImageConfig(
-            aspect_ratio="4:3",
-            # image_size="512",
-        ),
-        response_modalities=[
-            "IMAGE",
-            "TEXT",
-        ],
+            image_config = types.ImageConfig(
+                aspect_ratio="4:3",
+            ),
+            response_modalities=[
+                "IMAGE",
+                "TEXT",
+            ],
         ),
     )
 
@@ -91,7 +87,6 @@ async def show_visual_noun(
 
     if not image_bytes:
         return {
-    
             "status": "error",
             "message": "Image generation did not return an image.",
             "term": term,
@@ -107,7 +102,6 @@ async def show_visual_noun(
     signed_url = await generate_signed_url(GCS_BUCKET, blob_path, expiration_minutes=1440)
 
     return {
-
         "status": "success",
         "image_url": signed_url,
         "gcs_path": blob_path,
