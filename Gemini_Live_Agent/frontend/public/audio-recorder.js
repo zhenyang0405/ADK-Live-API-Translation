@@ -1,12 +1,11 @@
 class AudioRecorderProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this._resampleRatio = sampleRate / 16000;
-
     // VAD state
     this._speaking = false;
     this._silenceCounter = 0;
     this._speechOnsetCounter = 0;
+    this._speechStartFrame = 0;
 
     // Adaptive noise floor
     this._noiseFloor = 0;
@@ -14,39 +13,91 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
     this._speechMultiplier = 6.0; // Speech must be 6x above noise floor
     this._minSpeechThreshold = 0.05; // Absolute minimum
     this._frameCount = 0;
-    this._warmupFrames = 75; // ~200ms — skip mic activation artifacts
-    this._calibrationEnd = 300; // ~800ms total — collect samples after warmup
+    // Frame timing: 128 samples/frame at 16kHz = 8ms/frame
+    this._warmupFrames = 25; // ~200ms — skip mic activation artifacts
+    this._calibrationEnd = 100; // ~800ms total — collect samples after warmup
     this._calibrationSamples = []; // Collect RMS values during calibration
 
     // Hysteresis
-    this._speechOnsetFramesRequired = 12; // ~32ms sustained
-    this._silenceFramesRequired = 55; // ~1.1s
+    this._speechOnsetFramesRequired = 4; // ~32ms sustained
+    this._silenceFramesRequired = 138; // ~1.1s
+
+    // Max speech duration cap: 15s = 15000ms / 8ms = 1875 frames
+    this._maxSpeechFrames = 1875;
 
     // Prefix buffer
     this._prefixBuffer = [];
-    this._prefixBufferSize = 15;
+    this._prefixBufferSize = 5;
 
     // Debug
-    this._logInterval = 375;
+    this._logInterval = 125;
     this._lastLogFrame = 0;
+
+    // Bandpass filter for speech detection (300Hz – 3500Hz at 16kHz sample rate)
+    // Using biquad cookbook formulas (Robert Bristow-Johnson)
+    this._initBandpassFilter();
   }
 
-  _calculateRMS(float32Data) {
+  _initBandpassFilter() {
+    const fs = 16000; // sampleRate forced to 16kHz via AudioContext
+    const PI = Math.PI;
+
+    // High-pass filter at 300Hz (2nd-order biquad, Butterworth Q=0.707)
+    const hpFreq = 300;
+    const hpW0 = 2 * PI * hpFreq / fs;
+    const hpAlpha = Math.sin(hpW0) / (2 * 0.707);
+    const hpCosW0 = Math.cos(hpW0);
+    const hpA0 = 1 + hpAlpha;
+    this._hp = {
+      b0: ((1 + hpCosW0) / 2) / hpA0,
+      b1: (-(1 + hpCosW0)) / hpA0,
+      b2: ((1 + hpCosW0) / 2) / hpA0,
+      a1: (-2 * hpCosW0) / hpA0,
+      a2: (1 - hpAlpha) / hpA0,
+      x1: 0, x2: 0, y1: 0, y2: 0,
+    };
+
+    // Low-pass filter at 3500Hz (2nd-order biquad, Butterworth Q=0.707)
+    const lpFreq = 3500;
+    const lpW0 = 2 * PI * lpFreq / fs;
+    const lpAlpha = Math.sin(lpW0) / (2 * 0.707);
+    const lpCosW0 = Math.cos(lpW0);
+    const lpA0 = 1 + lpAlpha;
+    this._lp = {
+      b0: ((1 - lpCosW0) / 2) / lpA0,
+      b1: (1 - lpCosW0) / lpA0,
+      b2: ((1 - lpCosW0) / 2) / lpA0,
+      a1: (-2 * lpCosW0) / lpA0,
+      a2: (1 - lpAlpha) / lpA0,
+      x1: 0, x2: 0, y1: 0, y2: 0,
+    };
+  }
+
+  _applyBiquad(filter, sample) {
+    const out = filter.b0 * sample + filter.b1 * filter.x1 + filter.b2 * filter.x2
+              - filter.a1 * filter.y1 - filter.a2 * filter.y2;
+    filter.x2 = filter.x1;
+    filter.x1 = sample;
+    filter.y2 = filter.y1;
+    filter.y1 = out;
+    return out;
+  }
+
+  _speechBandRMS(float32Data) {
     let sum = 0;
     for (let i = 0; i < float32Data.length; i++) {
-      sum += float32Data[i] * float32Data[i];
+      // High-pass then low-pass = bandpass (300–3500Hz)
+      const hp = this._applyBiquad(this._hp, float32Data[i]);
+      const filtered = this._applyBiquad(this._lp, hp);
+      sum += filtered * filtered;
     }
     return Math.sqrt(sum / float32Data.length);
   }
 
-  _resample(float32Data) {
-    const outputLength = Math.floor(float32Data.length / this._resampleRatio);
-    if (outputLength === 0) return null;
-
-    const pcmData = new Int16Array(outputLength);
-    for (let i = 0; i < outputLength; i++) {
-      const srcIndex = Math.floor(i * this._resampleRatio);
-      const val = Math.max(-1, Math.min(1, float32Data[srcIndex]));
+  _toInt16PCM(float32Data) {
+    const pcmData = new Int16Array(float32Data.length);
+    for (let i = 0; i < float32Data.length; i++) {
+      const val = Math.max(-1, Math.min(1, float32Data[i]));
       pcmData[i] = val < 0 ? val * 0x8000 : val * 0x7FFF;
     }
     return pcmData;
@@ -78,7 +129,8 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
     if (!input || input.length === 0) return true;
 
     const float32Data = input[0];
-    const rms = this._calculateRMS(float32Data);
+    // Use bandpass-filtered RMS (300–3500Hz) for VAD — ignores rumble and hiss
+    const rms = this._speechBandRMS(float32Data);
     this._frameCount++;
 
     // Phase 1: Skip warmup (mic activation artifacts)
@@ -86,9 +138,8 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // Resample to 16kHz PCM
-    const pcmData = this._resample(float32Data);
-    if (!pcmData) return true;
+    // Convert float32 to 16-bit PCM (already at 16kHz via AudioContext)
+    const pcmData = this._toInt16PCM(float32Data);
 
     // Phase 2: Calibration — collect RMS samples, don't do VAD yet
     if (this._frameCount <= this._calibrationEnd) {
@@ -137,6 +188,7 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
           this._speaking = true;
           this._silenceCounter = 0;
           this._speechOnsetCounter = 0;
+          this._speechStartFrame = this._frameCount;
           this.port.postMessage({ type: "vad", speaking: true });
 
           // Flush prefix buffer
@@ -153,6 +205,14 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
     } else {
       // Currently speaking — send audio
       this.port.postMessage({ type: "audio", buffer: pcmData.buffer }, [pcmData.buffer]);
+
+      // Safety net: max speech duration cap (~15s)
+      if (this._frameCount - this._speechStartFrame >= this._maxSpeechFrames) {
+        this._speaking = false;
+        this._silenceCounter = 0;
+        this.port.postMessage({ type: "vad", speaking: false });
+        return true;
+      }
 
       // Check for silence
       if (rms < silenceThreshold) {

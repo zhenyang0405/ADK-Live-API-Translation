@@ -25,6 +25,7 @@ export default function MicBar() {
   const playbackContextRef = useRef<AudioContext | null>(null);
   const playbackQueueRef = useRef<AudioBufferSourceNode[]>([]);
   const nextStartTimeRef = useRef<number>(0);
+  const activityEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const startMicrophone = async () => {
     try {
@@ -33,7 +34,7 @@ export default function MicBar() {
       });
       streamRef.current = stream;
 
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       audioContextRef.current = audioContext;
 
       await audioContext.audioWorklet.addModule("/audio-recorder.js");
@@ -49,6 +50,11 @@ export default function MicBar() {
 
         if (msg.type === "vad") {
           setIsSpeaking(msg.speaking);
+          if (msg.speaking) {
+            sendMessage({ type: "activity_start" });
+          } else {
+            sendMessage({ type: "activity_end" });
+          }
           return;
         }
 
