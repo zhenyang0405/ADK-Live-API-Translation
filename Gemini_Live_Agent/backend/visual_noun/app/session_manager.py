@@ -19,13 +19,6 @@ def create_run_config() -> RunConfig:
     return RunConfig(
         streaming_mode=StreamingMode.BIDI,
         response_modalities=[types.Modality.AUDIO],
-        realtime_input_config=types.RealtimeInputConfig(
-            automatic_activity_detection=types.AutomaticActivityDetection(
-                silence_duration_ms=2000,
-                # speech_end_sensitivity=0.3,
-                # prefix_padding_ms=500,
-            )
-        ),
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
@@ -35,12 +28,16 @@ def create_run_config() -> RunConfig:
         ),
         output_audio_transcription=types.AudioTranscriptionConfig(),
         input_audio_transcription=types.AudioTranscriptionConfig(),
+        realtime_input_config=types.RealtimeInputConfig(
+            automatic_activity_detection=types.AutomaticActivityDetection(
+                disabled=True  # Client handles VAD
+            )
+        ),
+        session_resumption=types.SessionResumptionConfig(),
         context_window_compression=types.ContextWindowCompressionConfig(
             trigger_tokens=120000,
             sliding_window=types.SlidingWindow(target_tokens=60000),
         ),
-        session_resumption=types.SessionResumptionConfig(),
-        # proactivity={'proactive_audio': True},
     )
 
 async def create_session(user_id: str, session_id: str):

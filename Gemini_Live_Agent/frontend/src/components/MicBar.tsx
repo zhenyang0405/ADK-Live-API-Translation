@@ -25,7 +25,6 @@ export default function MicBar() {
   const playbackContextRef = useRef<AudioContext | null>(null);
   const playbackQueueRef = useRef<AudioBufferSourceNode[]>([]);
   const nextStartTimeRef = useRef<number>(0);
-  const activityEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const startMicrophone = async () => {
     try {
@@ -48,13 +47,9 @@ export default function MicBar() {
       workletNode.port.onmessage = (event) => {
         const msg = event.data;
 
+        // VAD messages update visual feedback only (wave bar animation)
         if (msg.type === "vad") {
           setIsSpeaking(msg.speaking);
-          if (msg.speaking) {
-            sendMessage({ type: "activity_start" });
-          } else {
-            sendMessage({ type: "activity_end" });
-          }
           return;
         }
 
@@ -73,12 +68,18 @@ export default function MicBar() {
       sourceNode.connect(workletNode);
       workletNode.connect(audioContext.destination);
       setIsListening(true);
+
+      // Push-to-talk: mic on = activity starts
+      sendMessage({ type: "activity_start" });
     } catch (err) {
       console.error("Error starting microphone", err);
     }
   };
 
   const stopMicrophone = () => {
+    // Push-to-talk: mic off = activity ends
+    sendMessage({ type: "activity_end" });
+
     if (workletNodeRef.current && audioContextRef.current) {
       workletNodeRef.current.disconnect();
       sourceNodeRef.current?.disconnect();
@@ -87,6 +88,7 @@ export default function MicBar() {
       streamRef.current.getTracks().forEach((track) => track.stop());
     }
     setIsListening(false);
+    setIsSpeaking(false);
   };
 
   const base64ToArrayBuffer = (base64: string) => {

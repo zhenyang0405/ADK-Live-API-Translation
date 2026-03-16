@@ -5,7 +5,9 @@ export type UpstreamMessage =
   | { type: "screen_frame"; data: string } // base64 JPEG
   | { type: "document_frame"; data: string; selection?: { x: number; y: number; width: number; height: number } } // base64 JPEG of a document page
   | { type: "text"; content: string }
-  | { type: "set_document"; doc_name: string };
+  | { type: "set_document"; doc_name: string }
+  | { type: "activity_start" }
+  | { type: "activity_end" };
 
 // Messages received FROM the backend
 export type DownstreamMessage =

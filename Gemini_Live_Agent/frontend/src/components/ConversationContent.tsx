@@ -79,7 +79,10 @@ export default function ConversationContent() {
       <div className="flex-1 overflow-y-auto min-h-0 px-6 pb-6">
         {loadingDetail ? (
           <div className="flex justify-center py-6">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#1D9E75]" />
+            <div
+              className="rounded-full h-6 w-6 border-b-2 border-[#1D9E75]"
+              style={{ animationName: "spin", animationDuration: "1s", animationTimingFunction: "linear", animationIterationCount: "infinite" }}
+            />
           </div>
         ) : (
           <ConversationHistoryList

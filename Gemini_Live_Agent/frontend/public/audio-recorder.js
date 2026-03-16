@@ -1,48 +1,39 @@
 class AudioRecorderProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    // VAD state
+    // VAD state (visual feedback only — does NOT gate audio)
     this._speaking = false;
-    this._silenceCounter = 0;
     this._speechOnsetCounter = 0;
-    this._speechStartFrame = 0;
+    this._silenceCounter = 0;
 
     // Adaptive noise floor
     this._noiseFloor = 0;
-    this._noiseFloorAlpha = 0.002; // Very slow EMA for runtime adaptation
-    this._speechMultiplier = 6.0; // Speech must be 6x above noise floor
-    this._minSpeechThreshold = 0.05; // Absolute minimum
+    this._noiseFloorAlpha = 0.002;
+    this._speechMultiplier = 6.0;
+    this._minSpeechThreshold = 0.05;
     this._frameCount = 0;
     // Frame timing: 128 samples/frame at 16kHz = 8ms/frame
     this._warmupFrames = 25; // ~200ms — skip mic activation artifacts
-    this._calibrationEnd = 100; // ~800ms total — collect samples after warmup
-    this._calibrationSamples = []; // Collect RMS values during calibration
+    this._calibrationEnd = 100; // ~800ms total
+    this._calibrationSamples = [];
 
-    // Hysteresis
-    this._speechOnsetFramesRequired = 4; // ~32ms sustained
-    this._silenceFramesRequired = 138; // ~1.1s
-
-    // Max speech duration cap: 15s = 15000ms / 8ms = 1875 frames
-    this._maxSpeechFrames = 1875;
-
-    // Prefix buffer
-    this._prefixBuffer = [];
-    this._prefixBufferSize = 5;
+    // Hysteresis for visual feedback
+    this._speechOnsetFramesRequired = 4; // ~32ms
+    this._silenceFramesRequired = 25; // ~200ms (shorter for visual responsiveness)
 
     // Debug
     this._logInterval = 125;
     this._lastLogFrame = 0;
 
-    // Bandpass filter for speech detection (300Hz – 3500Hz at 16kHz sample rate)
-    // Using biquad cookbook formulas (Robert Bristow-Johnson)
+    // Bandpass filter for speech detection (300Hz – 3500Hz at 16kHz)
     this._initBandpassFilter();
   }
 
   _initBandpassFilter() {
-    const fs = 16000; // sampleRate forced to 16kHz via AudioContext
+    const fs = 16000;
     const PI = Math.PI;
 
-    // High-pass filter at 300Hz (2nd-order biquad, Butterworth Q=0.707)
+    // High-pass at 300Hz (biquad, Butterworth Q=0.707)
     const hpFreq = 300;
     const hpW0 = 2 * PI * hpFreq / fs;
     const hpAlpha = Math.sin(hpW0) / (2 * 0.707);
@@ -57,7 +48,7 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
       x1: 0, x2: 0, y1: 0, y2: 0,
     };
 
-    // Low-pass filter at 3500Hz (2nd-order biquad, Butterworth Q=0.707)
+    // Low-pass at 3500Hz (biquad, Butterworth Q=0.707)
     const lpFreq = 3500;
     const lpW0 = 2 * PI * lpFreq / fs;
     const lpAlpha = Math.sin(lpW0) / (2 * 0.707);
@@ -86,7 +77,6 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
   _speechBandRMS(float32Data) {
     let sum = 0;
     for (let i = 0; i < float32Data.length; i++) {
-      // High-pass then low-pass = bandpass (300–3500Hz)
       const hp = this._applyBiquad(this._hp, float32Data[i]);
       const filtered = this._applyBiquad(this._lp, hp);
       sum += filtered * filtered;
@@ -112,8 +102,6 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
   }
 
   _finalizeCalibration() {
-    // Use the 50th percentile (median) of collected samples as noise floor
-    // This is robust against outlier spikes from mic activation
     if (this._calibrationSamples.length === 0) {
       this._noiseFloor = 0.005;
       return;
@@ -121,7 +109,7 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
     this._calibrationSamples.sort((a, b) => a - b);
     const medianIndex = Math.floor(this._calibrationSamples.length / 2);
     this._noiseFloor = this._calibrationSamples[medianIndex];
-    this._calibrationSamples = null; // Free memory
+    this._calibrationSamples = null;
   }
 
   process(inputs, outputs, parameters) {
@@ -129,19 +117,19 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
     if (!input || input.length === 0) return true;
 
     const float32Data = input[0];
-    // Use bandpass-filtered RMS (300–3500Hz) for VAD — ignores rumble and hiss
     const rms = this._speechBandRMS(float32Data);
     this._frameCount++;
 
-    // Phase 1: Skip warmup (mic activation artifacts)
+    // Skip warmup (mic activation artifacts)
     if (this._frameCount <= this._warmupFrames) {
       return true;
     }
 
-    // Convert float32 to 16-bit PCM (already at 16kHz via AudioContext)
+    // Convert and always send audio (push-to-talk — mic button controls flow)
     const pcmData = this._toInt16PCM(float32Data);
+    this.port.postMessage({ type: "audio", buffer: pcmData.buffer }, [pcmData.buffer]);
 
-    // Phase 2: Calibration — collect RMS samples, don't do VAD yet
+    // Calibration phase — collect RMS for noise floor
     if (this._frameCount <= this._calibrationEnd) {
       this._calibrationSamples.push(rms);
       if (this._frameCount === this._calibrationEnd) {
@@ -166,55 +154,27 @@ class AudioRecorderProcessor extends AudioWorkletProcessor {
       });
     }
 
-    // Adaptive noise floor: update only when NOT speaking
+    // Adaptive noise floor: update only when not speaking
     if (!this._speaking) {
-      // Only adapt if rms is close to current noise floor (not a speech spike)
       if (rms < this._noiseFloor * 2.0) {
         this._noiseFloor += (rms - this._noiseFloor) * this._noiseFloorAlpha;
       }
     }
 
+    // VAD for visual feedback only (wave bar animation)
     if (!this._speaking) {
-      // Buffer audio for prefix padding
-      this._prefixBuffer.push(pcmData.buffer.slice(0));
-      if (this._prefixBuffer.length > this._prefixBufferSize) {
-        this._prefixBuffer.shift();
-      }
-
-      // Check for speech onset with hysteresis
       if (rms > speechThreshold) {
         this._speechOnsetCounter++;
         if (this._speechOnsetCounter >= this._speechOnsetFramesRequired) {
           this._speaking = true;
           this._silenceCounter = 0;
           this._speechOnsetCounter = 0;
-          this._speechStartFrame = this._frameCount;
           this.port.postMessage({ type: "vad", speaking: true });
-
-          // Flush prefix buffer
-          for (const buf of this._prefixBuffer) {
-            this.port.postMessage({ type: "audio", buffer: buf }, [buf]);
-          }
-          this._prefixBuffer = [];
-
-          this.port.postMessage({ type: "audio", buffer: pcmData.buffer }, [pcmData.buffer]);
         }
       } else {
         this._speechOnsetCounter = 0;
       }
     } else {
-      // Currently speaking — send audio
-      this.port.postMessage({ type: "audio", buffer: pcmData.buffer }, [pcmData.buffer]);
-
-      // Safety net: max speech duration cap (~15s)
-      if (this._frameCount - this._speechStartFrame >= this._maxSpeechFrames) {
-        this._speaking = false;
-        this._silenceCounter = 0;
-        this.port.postMessage({ type: "vad", speaking: false });
-        return true;
-      }
-
-      // Check for silence
       if (rms < silenceThreshold) {
         this._silenceCounter++;
         if (this._silenceCounter >= this._silenceFramesRequired) {
